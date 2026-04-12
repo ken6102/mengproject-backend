@@ -1,0 +1,71 @@
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const MEngProjectApp());
+}
+
+class MEngProjectApp extends StatelessWidget {
+  const MEngProjectApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'MEngProject',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('MEngProject'),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Welcome to MEngProject',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'This is a very basic Flutter UI.\n'
+                'You can extend it later with more screens and features.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+              ElevatedButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Button pressed!'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: const Text('Press Me'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
