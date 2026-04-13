@@ -18,6 +18,14 @@ class CompatibleInputLayer(InputLayer):
         super().__init__(*args, **kwargs)
 
 
+class CompatibleDTypePolicy:
+    def __init__(self, name="float32", **kwargs):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+
 def get_model():
     global _model
     if _model is None:
@@ -29,6 +37,7 @@ def get_model():
                 "CompatibleInputLayer": CompatibleInputLayer,
                 "BatchNormalization": CompatibleBatchNormalization,
                 "InputLayer": CompatibleInputLayer,
+                "DTypePolicy": CompatibleDTypePolicy,
             },
             compile=False,
         )
