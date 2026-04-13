@@ -1,7 +1,7 @@
 from pathlib import Path
 import tensorflow as tf
 
-MODEL_PATH = Path("models/cnn_curated.keras")
+MODEL_PATH = Path("models/cnn_curated.h5")
 _model = None
 
 def get_model():
