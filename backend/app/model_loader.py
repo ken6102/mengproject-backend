@@ -8,6 +8,6 @@ def get_model():
     global _model
     if _model is None:
         print(f"Loading model from: {MODEL_PATH.resolve()}")
-        _model = tf.keras.models.load_model(MODEL_PATH)
+        _model = tf.keras.models.load_model(MODEL_PATH, compile=False)
         print("Model loaded successfully.")
     return _model
