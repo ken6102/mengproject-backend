@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String kBackendBaseUrl = 'http://192.168.1.131:8000';
+const String kBackendBaseUrl = 'https://mengproject-backend.onrender.com';
 
 void main() => runApp(const MEngProjectApp());
 
