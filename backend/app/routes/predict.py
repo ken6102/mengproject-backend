@@ -4,13 +4,14 @@ from PIL import Image
 import shutil
 import uuid
 
+from app.inference import run_binary_inference
+
 router = APIRouter(prefix="/predict", tags=["predict"])
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-
 
 @router.post("/")
 async def predict_image(file: UploadFile = File(...)) -> dict:
@@ -29,9 +30,12 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Validate that the file is actually a readable image
         with Image.open(save_path) as img:
             img.verify()
+
+        result = run_binary_inference(save_path)
+        result["filename"] = unique_name
+        return result
 
     except HTTPException:
         raise
@@ -44,12 +48,3 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
         ) from exc
     finally:
         file.file.close()
-
-    return {
-        "filename": unique_name,
-        "label": "malignant",
-        "confidence": 0.91,
-        "probability_malignant": 0.91,
-        "threshold": 0.5,
-        "message": "Dummy prediction returned successfully. Replace this with real model inference next."
-    }
