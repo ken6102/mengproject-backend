@@ -27,7 +27,6 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
     unique_name = f"{uuid.uuid4()}{file_extension}"
     save_path = UPLOAD_DIR / unique_name
 
-    # Step 1: save uploaded file
     try:
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -39,7 +38,6 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
     finally:
         file.file.close()
 
-    # Step 2: validate image
     try:
         with Image.open(save_path) as img:
             img.verify()
@@ -48,10 +46,9 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
             save_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=400,
-            detail=f"Uploaded file is not a valid supported image: {exc}"
+            detail=f"Image validation failed: {exc}"
         ) from exc
 
-    # Step 3: run inference separately
     try:
         result = run_binary_inference(save_path)
         result["filename"] = unique_name
@@ -59,5 +56,5 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Model inference failed: {exc}"
+            detail=f"Inference failed: {exc}"
         ) from exc
