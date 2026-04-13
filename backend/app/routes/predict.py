@@ -13,6 +13,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
+
 @router.post("/")
 async def predict_image(file: UploadFile = File(...)) -> dict:
     file_extension = Path(file.filename).suffix.lower()
@@ -26,19 +27,22 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
     unique_name = f"{uuid.uuid4()}{file_extension}"
     save_path = UPLOAD_DIR / unique_name
 
+    # Step 1: save uploaded file
     try:
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save uploaded image: {exc}"
+        ) from exc
+    finally:
+        file.file.close()
 
+    # Step 2: validate image
+    try:
         with Image.open(save_path) as img:
             img.verify()
-
-        result = run_binary_inference(save_path)
-        result["filename"] = unique_name
-        return result
-
-    except HTTPException:
-        raise
     except Exception as exc:
         if save_path.exists():
             save_path.unlink(missing_ok=True)
@@ -46,5 +50,14 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
             status_code=400,
             detail=f"Uploaded file is not a valid supported image: {exc}"
         ) from exc
-    finally:
-        file.file.close()
+
+    # Step 3: run inference separately
+    try:
+        result = run_binary_inference(save_path)
+        result["filename"] = unique_name
+        return result
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model inference failed: {exc}"
+        ) from exc
