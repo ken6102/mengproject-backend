@@ -1,13 +1,64 @@
 from pathlib import Path
 import tensorflow as tf
+from tensorflow.keras.layers import BatchNormalization, InputLayer, Dense, Conv2D
 
-MODEL_PATH = Path("models/cnn_curated_render.h5")
+MODEL_PATH = Path("models/cnn_curated_clean.h5")
 _model = None
+
+
+class CompatibleBatchNormalization(BatchNormalization):
+    def __init__(self, *args, renorm=None, renorm_clipping=None, renorm_momentum=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class CompatibleInputLayer(InputLayer):
+    def __init__(self, *args, batch_shape=None, optional=None, **kwargs):
+        if batch_shape is not None and "input_shape" not in kwargs:
+            kwargs["input_shape"] = tuple(batch_shape[1:])
+        super().__init__(*args, **kwargs)
+
+
+class CompatibleDense(Dense):
+    def __init__(self, *args, quantization_config=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class CompatibleConv2D(Conv2D):
+    def __init__(self, *args, quantization_config=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class CompatibleDTypePolicy:
+    def __init__(self, name="float32", **kwargs):
+        self.name = name
+        self.compute_dtype = name
+        self.variable_dtype = name
+
+    def __str__(self):
+        return self.name
+
+    def get_config(self):
+        return {"name": self.name}
+
 
 def get_model():
     global _model
     if _model is None:
         print(f"Loading model from: {MODEL_PATH.resolve()}")
-        _model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+        _model = tf.keras.models.load_model(
+            MODEL_PATH,
+            custom_objects={
+                "CompatibleBatchNormalization": CompatibleBatchNormalization,
+                "CompatibleInputLayer": CompatibleInputLayer,
+                "CompatibleDense": CompatibleDense,
+                "CompatibleConv2D": CompatibleConv2D,
+                "BatchNormalization": CompatibleBatchNormalization,
+                "InputLayer": CompatibleInputLayer,
+                "Dense": CompatibleDense,
+                "Conv2D": CompatibleConv2D,
+                "DTypePolicy": CompatibleDTypePolicy,
+            },
+            compile=False,
+        )
         print("Model loaded successfully.")
     return _model
