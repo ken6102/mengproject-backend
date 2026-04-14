@@ -21,9 +21,14 @@ class CompatibleInputLayer(InputLayer):
 class CompatibleDTypePolicy:
     def __init__(self, name="float32", **kwargs):
         self.name = name
+        self.compute_dtype = name
+        self.variable_dtype = name
 
     def __str__(self):
         return self.name
+
+    def get_config(self):
+        return {"name": self.name}
 
 
 def get_model():
