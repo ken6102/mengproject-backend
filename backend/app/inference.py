@@ -18,7 +18,7 @@ def run_binary_inference(image_path: Path) -> dict:
         "probability_malignant": score,
         "threshold": 0.5,
         "message": (
-            "Real curated-model prediction returned successfully."
+            "Prediction returned successfully."
             if is_malignant or not is_malignant
             else "Prediction complete."
         ),
