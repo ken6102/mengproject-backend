@@ -6,9 +6,6 @@ import cv2
 import numpy as np
 
 
-# -----------------------------
-# Data structure
-# -----------------------------
 @dataclass
 class FeatureResult:
     score: float
@@ -17,9 +14,6 @@ class FeatureResult:
     details: dict[str, Any]
 
 
-# -----------------------------
-# Utilities
-# -----------------------------
 def _normalise_score(value: float, min_value: float, max_value: float) -> float:
     if max_value <= min_value:
         return 0.0
@@ -28,27 +22,33 @@ def _normalise_score(value: float, min_value: float, max_value: float) -> float:
 
 
 def _largest_contour(mask: np.ndarray) -> np.ndarray | None:
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(
+        mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
     if not contours:
         return None
     return max(contours, key=cv2.contourArea)
 
 
-def _resize_for_analysis(image_bgr: np.ndarray, target_width: int = 512) -> np.ndarray:
+def _resize_for_analysis(image_bgr: np.ndarray, target_width: int = 384) -> np.ndarray:
     h, w = image_bgr.shape[:2]
     if w <= target_width:
-        return image_bgr
+        return image_bgr.copy()
+
     scale = target_width / w
-    new_size = (int(w * scale), int(h * scale))
-    return cv2.resize(image_bgr, new_size, interpolation=cv2.INTER_AREA)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    return cv2.resize(image_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
-# -----------------------------
-# Lesion segmentation
-# -----------------------------
 def segment_lesion(image_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-    image_bgr = _resize_for_analysis(image_bgr)
-
+    """
+    Segments the lesion from the provided image.
+    IMPORTANT:
+    - Expects image_bgr already resized/prepared for analysis.
+    - Returns a mask with the SAME height/width as image_bgr.
+    """
     blurred = cv2.GaussianBlur(image_bgr, (5, 5), 0)
     lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
     l_channel, _, _ = cv2.split(lab)
@@ -71,13 +71,15 @@ def segment_lesion(image_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray | None
     return final_mask, contour
 
 
-# -----------------------------
-# A — Asymmetry
-# -----------------------------
 def compute_asymmetry(mask: np.ndarray) -> FeatureResult:
     ys, xs = np.where(mask > 0)
-    if len(xs) == 0:
-        return FeatureResult(0.0, "not assessable", ["asymmetry not assessable"], {})
+    if len(xs) == 0 or len(ys) == 0:
+        return FeatureResult(
+            score=0.0,
+            label="not assessable",
+            keywords=["asymmetry not assessable"],
+            details={},
+        )
 
     x1, x2 = xs.min(), xs.max()
     y1, y2 = ys.min(), ys.max()
@@ -93,125 +95,287 @@ def compute_asymmetry(mask: np.ndarray) -> FeatureResult:
         h += 1
 
     left = lesion_crop[:, : w // 2]
-    right = cv2.flip(lesion_crop[:, w // 2:], 1)
+    right = lesion_crop[:, w // 2 :]
+    right_flipped = cv2.flip(right, 1)
 
     top = lesion_crop[: h // 2, :]
-    bottom = cv2.flip(lesion_crop[h // 2:, :], 0)
+    bottom = lesion_crop[h // 2 :, :]
+    bottom_flipped = cv2.flip(bottom, 0)
 
-    lr_ratio = np.sum(left != right) / max(left.size, 1)
-    tb_ratio = np.sum(top != bottom) / max(top.size, 1)
+    lr_diff = np.sum(left != right_flipped)
+    tb_diff = np.sum(top != bottom_flipped)
 
-    asymmetry_raw = (lr_ratio + tb_ratio) / 2
-    score = _normalise_score(asymmetry_raw, 0.05, 0.45)
+    lr_ratio = lr_diff / max(left.size, 1)
+    tb_ratio = tb_diff / max(top.size, 1)
 
-    if score < 0.33:
-        return FeatureResult(score, "low asymmetry",
-                             ["low asymmetry", "balanced structure", "symmetrical appearance"], {})
-    elif score < 0.66:
-        return FeatureResult(score, "moderate asymmetry",
-                             ["moderate asymmetry", "some imbalance", "slightly uneven"], {})
+    asymmetry_raw = (lr_ratio + tb_ratio) / 2.0
+    asymmetry_score = _normalise_score(asymmetry_raw, 0.05, 0.45)
+
+    if asymmetry_score < 0.33:
+        label = "low asymmetry"
+        keywords = [
+            "low asymmetry",
+            "largely balanced structure",
+            "relatively symmetrical appearance",
+        ]
+    elif asymmetry_score < 0.66:
+        label = "moderate asymmetry"
+        keywords = [
+            "moderate asymmetry",
+            "some structural imbalance",
+            "mildly uneven shape",
+        ]
     else:
-        return FeatureResult(score, "marked asymmetry",
-                             ["marked asymmetry", "clearly uneven", "strong imbalance"], {})
+        label = "marked asymmetry"
+        keywords = [
+            "marked asymmetry",
+            "clearly uneven structure",
+            "pronounced structural imbalance",
+        ]
+
+    return FeatureResult(
+        score=float(asymmetry_score),
+        label=label,
+        keywords=keywords,
+        details={
+            "left_right_difference_ratio": float(lr_ratio),
+            "top_bottom_difference_ratio": float(tb_ratio),
+            "bounding_box": [int(x1), int(y1), int(x2), int(y2)],
+        },
+    )
 
 
-# -----------------------------
-# B — Border
-# -----------------------------
 def compute_border_irregularity(contour: np.ndarray) -> FeatureResult:
     area = cv2.contourArea(contour)
     perimeter = cv2.arcLength(contour, True)
 
-    circularity = (4 * np.pi * area) / (perimeter ** 2 + 1e-6)
+    if area <= 0 or perimeter <= 0:
+        return FeatureResult(
+            score=0.0,
+            label="not assessable",
+            keywords=["border not assessable"],
+            details={},
+        )
+
+    circularity = (4.0 * np.pi * area) / (perimeter * perimeter + 1e-6)
 
     hull = cv2.convexHull(contour)
-    solidity = area / (cv2.contourArea(hull) + 1e-6)
+    hull_area = cv2.contourArea(hull)
+    solidity = area / max(hull_area, 1e-6)
 
-    irregularity_raw = ((1 - circularity) * 0.7) + ((1 - solidity) * 0.3)
-    score = _normalise_score(irregularity_raw, 0.05, 0.55)
+    irregularity_raw = ((1.0 - circularity) * 0.7) + ((1.0 - solidity) * 0.3)
+    irregularity_score = _normalise_score(irregularity_raw, 0.05, 0.55)
 
-    if score < 0.33:
-        return FeatureResult(score, "regular border",
-                             ["smooth border", "well-defined edge", "uniform outline"], {})
-    elif score < 0.66:
-        return FeatureResult(score, "mildly irregular border",
-                             ["slightly uneven border", "minor irregularity"], {})
+    if irregularity_score < 0.33:
+        label = "regular border"
+        keywords = [
+            "regular border",
+            "well-defined outline",
+            "smooth lesion margin",
+        ]
+    elif irregularity_score < 0.66:
+        label = "mildly irregular border"
+        keywords = [
+            "mildly irregular border",
+            "slightly uneven outline",
+            "some border irregularity",
+        ]
     else:
-        return FeatureResult(score, "irregular border",
-                             ["irregular border", "jagged edge", "non-uniform outline"], {})
+        label = "irregular border"
+        keywords = [
+            "irregular border",
+            "uneven lesion outline",
+            "jagged or non-uniform margin",
+        ]
+
+    return FeatureResult(
+        score=float(irregularity_score),
+        label=label,
+        keywords=keywords,
+        details={
+            "area": float(area),
+            "perimeter": float(perimeter),
+            "circularity": float(circularity),
+            "solidity": float(solidity),
+        },
+    )
 
 
-# -----------------------------
-# C — Colour
-# -----------------------------
 def compute_colour_variation(image_bgr: np.ndarray, mask: np.ndarray) -> FeatureResult:
+    """
+    IMPORTANT:
+    - image_bgr and mask MUST have matching height/width
+    """
+    if image_bgr.shape[:2] != mask.shape[:2]:
+        raise ValueError(
+            f"Image/mask shape mismatch in colour analysis: "
+            f"image={image_bgr.shape[:2]}, mask={mask.shape[:2]}"
+        )
+
+    lesion_pixels = image_bgr[mask > 0]
+    if len(lesion_pixels) < 20:
+        return FeatureResult(
+            score=0.0,
+            label="not assessable",
+            keywords=["colour variation not assessable"],
+            details={},
+        )
+
     lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
-    lesion = lab[mask > 0]
+    lesion_lab = lab[mask > 0].astype(np.float32)
 
-    if len(lesion) < 20:
-        return FeatureResult(0.0, "not assessable", ["colour not assessable"], {})
+    l_std = float(np.std(lesion_lab[:, 0]))
+    a_std = float(np.std(lesion_lab[:, 1]))
+    b_std = float(np.std(lesion_lab[:, 2]))
 
-    l_std = np.std(lesion[:, 0])
-    a_std = np.std(lesion[:, 1])
-    b_std = np.std(lesion[:, 2])
+    combined_std = (l_std * 0.4) + (a_std * 0.3) + (b_std * 0.3)
 
-    combined = (l_std * 0.4) + (a_std * 0.3) + (b_std * 0.3)
-    score = _normalise_score(combined, 8.0, 35.0)
+    sample = lesion_lab
+    if len(sample) > 2000:
+        indices = np.random.choice(len(sample), 2000, replace=False)
+        sample = sample[indices]
 
-    if score < 0.33:
-        return FeatureResult(score, "low colour variation",
-                             ["uniform colour", "consistent pigmentation"], {})
-    elif score < 0.66:
-        return FeatureResult(score, "moderate colour variation",
-                             ["some variation", "non-uniform colour"], {})
+    k = min(3, len(sample))
+    if k < 2:
+        cluster_spread = 0.0
     else:
-        return FeatureResult(score, "high colour variation",
-                             ["multiple colours", "diverse pigmentation"], {})
+        criteria = (
+            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+            20,
+            1.0,
+        )
+        _, _, centers = cv2.kmeans(
+            sample,
+            k,
+            None,
+            criteria,
+            5,
+            cv2.KMEANS_PP_CENTERS,
+        )
+
+        dists = []
+        for i in range(len(centers)):
+            for j in range(i + 1, len(centers)):
+                dists.append(np.linalg.norm(centers[i] - centers[j]))
+        cluster_spread = float(np.mean(dists)) if dists else 0.0
+
+    colour_raw = (combined_std * 0.6) + (cluster_spread * 0.4)
+    colour_score = _normalise_score(colour_raw, 8.0, 35.0)
+
+    if colour_score < 0.33:
+        label = "low colour variation"
+        keywords = [
+            "low colour variation",
+            "fairly uniform pigmentation",
+            "consistent colour pattern",
+        ]
+    elif colour_score < 0.66:
+        label = "moderate colour variation"
+        keywords = [
+            "moderate colour variation",
+            "some pigmentation diversity",
+            "non-uniform colouring",
+        ]
+    else:
+        label = "high colour variation"
+        keywords = [
+            "high colour variation",
+            "multiple pigmentation tones",
+            "marked colour diversity",
+        ]
+
+    return FeatureResult(
+        score=float(colour_score),
+        label=label,
+        keywords=keywords,
+        details={
+            "l_std": l_std,
+            "a_std": a_std,
+            "b_std": b_std,
+            "combined_std": float(combined_std),
+            "cluster_spread": float(cluster_spread),
+        },
+    )
 
 
-# -----------------------------
-# Keyword bank
-# -----------------------------
-def build_keyword_bank(a, b, c):
+def build_keyword_bank(
+    asymmetry: FeatureResult,
+    border: FeatureResult,
+    colour: FeatureResult,
+) -> dict[str, list[str]]:
     return {
-        "asymmetry": a.keywords,
-        "border": b.keywords,
-        "colour": c.keywords,
-        "pooled": a.keywords + b.keywords + c.keywords
+        "asymmetry": asymmetry.keywords,
+        "border": border.keywords,
+        "colour": colour.keywords,
+        "pooled": asymmetry.keywords + border.keywords + colour.keywords,
     }
 
 
-# -----------------------------
-# Main ABC pipeline
-# -----------------------------
-def analyse_abc_features(image_bgr: np.ndarray) -> dict:
-    mask, contour = segment_lesion(image_bgr)
+def analyse_abc_features(image_bgr: np.ndarray) -> dict[str, Any]:
+    """
+    Full ABC feature pipeline.
+    Uses one consistently sized image throughout to avoid boolean index mismatches.
+    """
+    analysis_image = _resize_for_analysis(image_bgr)
+
+    mask, contour = segment_lesion(analysis_image)
 
     if contour is None:
         return {
             "success": False,
-            "message": "Lesion could not be isolated."
+            "message": "Could not isolate lesion region from image.",
+            "asymmetry": None,
+            "border": None,
+            "colour": None,
+            "keyword_bank": {
+                "asymmetry": ["asymmetry not assessable"],
+                "border": ["border not assessable"],
+                "colour": ["colour variation not assessable"],
+                "pooled": [
+                    "asymmetry not assessable",
+                    "border not assessable",
+                    "colour variation not assessable",
+                ],
+            },
         }
 
-    a = compute_asymmetry(mask)
-    b = compute_border_irregularity(contour)
-    c = compute_colour_variation(image_bgr, mask)
+    asymmetry = compute_asymmetry(mask)
+    border = compute_border_irregularity(contour)
+    colour = compute_colour_variation(analysis_image, mask)
 
     return {
         "success": True,
-        "asymmetry": a.__dict__,
-        "border": b.__dict__,
-        "colour": c.__dict__,
-        "keyword_bank": build_keyword_bank(a, b, c)
+        "asymmetry": {
+            "score": asymmetry.score,
+            "label": asymmetry.label,
+            "keywords": asymmetry.keywords,
+            "details": asymmetry.details,
+        },
+        "border": {
+            "score": border.score,
+            "label": border.label,
+            "keywords": border.keywords,
+            "details": border.details,
+        },
+        "colour": {
+            "score": colour.score,
+            "label": colour.label,
+            "keywords": colour.keywords,
+            "details": colour.details,
+        },
+        "keyword_bank": build_keyword_bank(asymmetry, border, colour),
     }
 
 
-# -----------------------------
-# Baseline explanation generator
-# -----------------------------
-def build_baseline_abc_explanation(abc_result: dict) -> str:
-    if not abc_result.get("success"):
-        return "The lesion could not be reliably analysed."
+def build_baseline_abc_explanation(abc_result: dict[str, Any]) -> str:
+    """
+    Generates a simple grounded explanation from the extracted ABC features.
+    """
+    if not abc_result.get("success", False):
+        return (
+            "The lesion image could not be reliably analysed for asymmetry, "
+            "border, and colour variation."
+        )
 
     a = abc_result["asymmetry"]["label"]
     b = abc_result["border"]["label"]
@@ -219,14 +383,19 @@ def build_baseline_abc_explanation(abc_result: dict) -> str:
 
     if "low" in a and "regular" in b and "low" in c:
         return (
-            "The lesion appears symmetrical with a smooth border and consistent colour, "
-            "indicating a relatively uniform structure."
+            "The lesion appears relatively symmetrical, with a smooth and "
+            "well-defined border and minimal colour variation. These features "
+            "suggest a more uniform visual appearance."
         )
 
     if "marked" in a or "irregular" in b or "high" in c:
         return (
-            "The lesion shows asymmetry, border irregularity, and colour variation, "
-            "suggesting structural and pigmentation inconsistencies."
+            "The lesion demonstrates noticeable asymmetry, border irregularity, "
+            "and variation in colour distribution. These image-derived features "
+            "suggest visible structural and pigmentation inconsistencies."
         )
 
-    return f"The lesion shows {a}, {b}, and {c}."
+    return (
+        f"The lesion shows {a}, {b}, and {c}. "
+        f"This suggests some degree of structural and visual variation within the lesion."
+    )
