@@ -48,3 +48,10 @@ app.*.map.json
 backend/uploads/
 backend/__pycache__/
 backend/.venv/
+
+# Python virtual environments
+tf215env/
+.venv/
+venv/
+env/
+ENV/

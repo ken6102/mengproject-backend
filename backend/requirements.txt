@@ -4,3 +4,7 @@ python-multipart
 pillow
 numpy
 tensorflow==2.15.1
+opencv-python
+scikit-image
+scipy
+openai

@@ -82,12 +82,14 @@ class _MEngProjectAppState extends State<MEngProjectApp> {
     });
   }
 
-  void _unlockWithPin(String enteredPin) {
+  bool _unlockWithPin(String enteredPin) {
     if (_savedPin != null && enteredPin == _savedPin) {
       setState(() {
         _isUnlocked = true;
       });
+      return true;
     }
+    return false;
   }
 
   void _lockAppNow() {
@@ -146,6 +148,74 @@ class _MEngProjectAppState extends State<MEngProjectApp> {
   }
 }
 
+class ScanRecord {
+  final String id;
+  final String patientName;
+  final int age;
+  final String fst;
+  final String label;
+  final double confidence;
+  final String notes;
+  final String imageBase64;
+  final String timestamp;
+  final String xaiExplanation;
+  final String asymmetryLabel;
+  final String borderLabel;
+  final String colourLabel;
+
+  const ScanRecord({
+    required this.id,
+    required this.patientName,
+    required this.age,
+    required this.fst,
+    required this.label,
+    required this.confidence,
+    required this.notes,
+    required this.imageBase64,
+    required this.timestamp,
+    required this.xaiExplanation,
+    required this.asymmetryLabel,
+    required this.borderLabel,
+    required this.colourLabel,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'patientName': patientName,
+      'age': age,
+      'fst': fst,
+      'label': label,
+      'confidence': confidence,
+      'notes': notes,
+      'imageBase64': imageBase64,
+      'timestamp': timestamp,
+      'xaiExplanation': xaiExplanation,
+      'asymmetryLabel': asymmetryLabel,
+      'borderLabel': borderLabel,
+      'colourLabel': colourLabel,
+    };
+  }
+
+  factory ScanRecord.fromJson(Map<String, dynamic> json) {
+    return ScanRecord(
+      id: json['id'] as String,
+      patientName: json['patientName'] as String,
+      age: json['age'] as int,
+      fst: json['fst'] as String,
+      label: json['label'] as String,
+      confidence: (json['confidence'] as num).toDouble(),
+      notes: json['notes'] as String,
+      imageBase64: json['imageBase64'] as String,
+      timestamp: json['timestamp'] as String,
+      xaiExplanation: (json['xaiExplanation'] ?? 'N/A').toString(),
+      asymmetryLabel: (json['asymmetryLabel'] ?? 'N/A').toString(),
+      borderLabel: (json['borderLabel'] ?? 'N/A').toString(),
+      colourLabel: (json['colourLabel'] ?? 'N/A').toString(),
+    );
+  }
+}
+
 class RootShell extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeChanged;
@@ -174,13 +244,67 @@ class RootShell extends StatefulWidget {
 
 class _RootShellState extends State<RootShell> {
   int _currentIndex = 0;
+  final List<ScanRecord> _historyRecords = [];
+  bool _isLoadingHistory = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('scan_history_records');
+
+    if (raw != null && raw.isNotEmpty) {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      _historyRecords
+        ..clear()
+        ..addAll(
+          decoded.map(
+            (item) => ScanRecord.fromJson(item as Map<String, dynamic>),
+          ),
+        );
+    }
+
+    setState(() {
+      _isLoadingHistory = false;
+    });
+  }
+
+  Future<void> _persistHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(_historyRecords.map((e) => e.toJson()).toList());
+    await prefs.setString('scan_history_records', encoded);
+  }
+
+  Future<void> _saveRecord(ScanRecord record) async {
+    setState(() {
+      _historyRecords.insert(0, record);
+    });
+    await _persistHistory();
+  }
+
+  Future<void> _deleteRecord(String id) async {
+    setState(() {
+      _historyRecords.removeWhere((record) => record.id == id);
+    });
+    await _persistHistory();
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       const HomePage(),
-      const ScanPage(),
-      const HistoryPage(),
+      ScanPage(
+        onSaveRecord: _saveRecord,
+      ),
+      HistoryPage(
+        records: _historyRecords,
+        isLoading: _isLoadingHistory,
+        onDeleteRecord: _deleteRecord,
+      ),
       SettingsPage(
         themeMode: widget.themeMode,
         onThemeChanged: widget.onThemeChanged,
@@ -194,7 +318,10 @@ class _RootShellState extends State<RootShell> {
     ];
 
     return Scaffold(
-      body: pages[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: pages,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
@@ -244,7 +371,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with AutomaticKeepAliveClientMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -256,6 +384,9 @@ class _HomePageState extends State<HomePage> {
     ),
   ];
 
+  @override
+  bool get wantKeepAlive => true;
+
   String _generateBotReply(String userMessage) {
     final message = userMessage.toLowerCase().trim();
 
@@ -266,20 +397,20 @@ class _HomePageState extends State<HomePage> {
         message.contains('photo') ||
         message.contains('camera') ||
         message.contains('upload')) {
-      return 'To use the Scan page, go to the Scan tab, upload an image from the gallery or capture one using the camera, then press Analyse Image. The current version supports image selection and a prototype analysis flow.';
+      return 'To use the Scan page, go to the Scan tab, upload an image from the gallery or capture one using the camera, then press Analyse Image. When a result is returned, you can save it to History with patient details.';
     }
 
     if (message.contains('history') ||
         message.contains('previous') ||
         message.contains('recent result') ||
         message.contains('past result')) {
-      return 'The History section is intended to show previous scan results. It currently displays placeholder entries, but later it will store analysed cases along with result details and patient-linked information.';
+      return 'The History section stores saved scans with patient details, image preview, confidence, result data, and explainability output.';
     }
 
     if (message.contains('about') ||
         message.contains('credits') ||
         message.contains('version')) {
-      return 'The About page contains the app version, intended user group, prototype purpose, disclaimer, and project credits.';
+      return 'The About page contains the app version, intended user group, prototype purpose, disclaimer, certifications, and project credits.';
     }
 
     if (message.contains('diagnosis') ||
@@ -294,7 +425,7 @@ class _HomePageState extends State<HomePage> {
         message.contains('xai') ||
         message.contains('heatmap') ||
         message.contains('feature')) {
-      return 'A later version is planned to include explainability features such as highlighted image regions, feature-based outputs, and supporting information to make model behaviour easier to interpret.';
+      return 'The explainability section summarises asymmetry, border, and colour variation, then provides an image-based explanation generated from those extracted features.';
     }
 
     if (message.contains('settings') ||
@@ -302,7 +433,7 @@ class _HomePageState extends State<HomePage> {
         message.contains('pin') ||
         message.contains('password') ||
         message.contains('lock')) {
-      return 'The Settings page currently supports theme selection, PIN-based access, and an About section. The PIN feature can be used to protect app access locally on the device.';
+      return 'The Settings page currently supports theme selection, PIN-based access, a How to Use guide, and an About section.';
     }
 
     if (message.contains('chatbot') ||
@@ -315,10 +446,10 @@ class _HomePageState extends State<HomePage> {
         message.contains('python') ||
         message.contains('server') ||
         message.contains('api')) {
-      return 'Backend integration is planned for a later stage. The expected flow is that the app will send an image to a Python backend, receive the model output, and display the result inside the app.';
+      return 'The app sends an image to a hosted Python backend, receives the model output and explainability data, and displays the result inside the app.';
     }
 
-    return 'I can currently help with questions about the Scan page, History, Settings, About, explainability, and how this prototype is intended to be used.';
+    return 'I can currently help with questions about the Scan page, History, Settings, About, explainability output, and how this prototype is intended to be used.';
   }
 
   void _scrollToBottom() {
@@ -360,6 +491,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
@@ -573,13 +705,19 @@ class _HomePageState extends State<HomePage> {
 }
 
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  final Future<void> Function(ScanRecord record) onSaveRecord;
+
+  const ScanPage({
+    super.key,
+    required this.onSaveRecord,
+  });
 
   @override
   State<ScanPage> createState() => _ScanPageState();
 }
 
-class _ScanPageState extends State<ScanPage> {
+class _ScanPageState extends State<ScanPage>
+    with AutomaticKeepAliveClientMixin {
   final ImagePicker _picker = ImagePicker();
 
   File? _selectedImage;
@@ -588,8 +726,20 @@ class _ScanPageState extends State<ScanPage> {
   bool _isAnalysing = false;
 
   String _resultLabel = 'Awaiting analysis';
-  String _resultConfidence = '--';
+  double? _resultConfidenceValue;
+  String _resultConfidenceText = '--';
   String _resultMessage = 'Model output will appear here later.';
+
+  String _xaiExplanation = 'No explainability output yet.';
+  String _asymmetryLabel = 'N/A';
+  String _borderLabel = 'N/A';
+  String _colourLabel = 'N/A';
+
+  bool _hasCompletedScan = false;
+  bool _hasSavedCurrentScan = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -611,10 +761,16 @@ class _ScanPageState extends State<ScanPage> {
         _status = source == ImageSource.camera
             ? 'Photo captured successfully'
             : 'Image selected successfully';
-
         _resultLabel = 'Awaiting analysis';
-        _resultConfidence = '--';
-        _resultMessage = 'Press Analyse Image to send the image to the backend.';
+        _resultConfidenceValue = null;
+        _resultConfidenceText = '--';
+        _resultMessage = 'Model output will appear here later.';
+        _xaiExplanation = 'No explainability output yet.';
+        _asymmetryLabel = 'N/A';
+        _borderLabel = 'N/A';
+        _colourLabel = 'N/A';
+        _hasCompletedScan = false;
+        _hasSavedCurrentScan = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -625,6 +781,24 @@ class _ScanPageState extends State<ScanPage> {
         ),
       );
     }
+  }
+
+  void _clearArea() {
+    setState(() {
+      _selectedImage = null;
+      _imageBytes = null;
+      _status = 'No image selected';
+      _resultLabel = 'Awaiting analysis';
+      _resultConfidenceValue = null;
+      _resultConfidenceText = '--';
+      _resultMessage = 'Model output will appear here later.';
+      _xaiExplanation = 'No explainability output yet.';
+      _asymmetryLabel = 'N/A';
+      _borderLabel = 'N/A';
+      _colourLabel = 'N/A';
+      _hasCompletedScan = false;
+      _hasSavedCurrentScan = false;
+    });
   }
 
   Future<void> _analyseImage() async {
@@ -641,8 +815,15 @@ class _ScanPageState extends State<ScanPage> {
       _isAnalysing = true;
       _status = 'Uploading and analysing...';
       _resultLabel = 'Analysing...';
-      _resultConfidence = '--';
-      _resultMessage = 'Please wait while the backend processes the image.';
+      _resultConfidenceValue = null;
+      _resultConfidenceText = '--';
+      _resultMessage = 'Processing image.';
+      _xaiExplanation = 'Generating explainability output...';
+      _asymmetryLabel = 'Analysing...';
+      _borderLabel = 'Analysing...';
+      _colourLabel = 'Analysing...';
+      _hasCompletedScan = false;
+      _hasSavedCurrentScan = false;
     });
 
     try {
@@ -662,15 +843,38 @@ class _ScanPageState extends State<ScanPage> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final confidenceValue = (data['confidence'] as num?)?.toDouble();
 
+        final xaiExplanationMap =
+            data['xai_explanation'] as Map<String, dynamic>?;
+        final abcFeatures = data['abc_features'] as Map<String, dynamic>?;
+
+        final asymmetry = abcFeatures?['asymmetry'] as Map<String, dynamic>?;
+        final border = abcFeatures?['border'] as Map<String, dynamic>?;
+        final colour = abcFeatures?['colour'] as Map<String, dynamic>?;
+
         setState(() {
           _isAnalysing = false;
           _status = 'Analysis complete';
           _resultLabel = (data['label'] ?? 'unknown').toString();
-          _resultConfidence = confidenceValue != null
+          _resultConfidenceValue = confidenceValue;
+          _resultConfidenceText = confidenceValue != null
               ? '${(confidenceValue * 100).toStringAsFixed(1)}%'
               : '--';
           _resultMessage =
               (data['message'] ?? 'No message returned from backend.').toString();
+
+          _xaiExplanation =
+              (xaiExplanationMap?['rewritten'] ??
+                      xaiExplanationMap?['baseline'] ??
+                      'No explainability output returned.')
+                  .toString();
+
+          _asymmetryLabel =
+              (asymmetry?['label'] ?? 'Not available').toString();
+          _borderLabel = (border?['label'] ?? 'Not available').toString();
+          _colourLabel = (colour?['label'] ?? 'Not available').toString();
+
+          _hasCompletedScan = true;
+          _hasSavedCurrentScan = false;
         });
 
         if (!mounted) return;
@@ -682,9 +886,16 @@ class _ScanPageState extends State<ScanPage> {
           _isAnalysing = false;
           _status = 'Error';
           _resultLabel = 'Error';
-          _resultConfidence = '--';
+          _resultConfidenceValue = null;
+          _resultConfidenceText = '--';
           _resultMessage =
               'Backend returned status code ${response.statusCode}.';
+          _xaiExplanation = 'Explainability output unavailable.';
+          _asymmetryLabel = 'N/A';
+          _borderLabel = 'N/A';
+          _colourLabel = 'N/A';
+          _hasCompletedScan = false;
+          _hasSavedCurrentScan = false;
         });
 
         if (!mounted) return;
@@ -701,9 +912,16 @@ class _ScanPageState extends State<ScanPage> {
         _isAnalysing = false;
         _status = 'Error';
         _resultLabel = 'Connection error';
-        _resultConfidence = '--';
+        _resultConfidenceValue = null;
+        _resultConfidenceText = '--';
         _resultMessage =
             'Could not connect to backend. Check the server is running.';
+        _xaiExplanation = 'Explainability output unavailable.';
+        _asymmetryLabel = 'N/A';
+        _borderLabel = 'N/A';
+        _colourLabel = 'N/A';
+        _hasCompletedScan = false;
+        _hasSavedCurrentScan = false;
       });
 
       if (!mounted) return;
@@ -713,8 +931,148 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
+  Future<void> _promptSaveScan() async {
+    if (_imageBytes == null || !_hasCompletedScan || _hasSavedCurrentScan) {
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final ageController = TextEditingController();
+    final notesController = TextEditingController();
+    String selectedFst = 'I';
+
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Save Scan'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Enter patient details to save this scan to History.',
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Name',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: ageController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Age',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedFst,
+                      items: const [
+                        DropdownMenuItem(value: 'I', child: Text('FST I')),
+                        DropdownMenuItem(value: 'II', child: Text('FST II')),
+                        DropdownMenuItem(value: 'III', child: Text('FST III')),
+                        DropdownMenuItem(value: 'IV', child: Text('FST IV')),
+                        DropdownMenuItem(value: 'V', child: Text('FST V')),
+                        DropdownMenuItem(value: 'VI', child: Text('FST VI')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() {
+                            selectedFst = value;
+                          });
+                        }
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'FST',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (optional)',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+                    final age = int.tryParse(ageController.text.trim());
+
+                    if (name.isEmpty || age == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please enter a valid name and age'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    final record = ScanRecord(
+                      id: DateTime.now().microsecondsSinceEpoch.toString(),
+                      patientName: name,
+                      age: age,
+                      fst: selectedFst,
+                      label: _resultLabel,
+                      confidence: _resultConfidenceValue ?? 0,
+                      notes: notesController.text.trim().isEmpty
+                          ? 'N/A'
+                          : notesController.text.trim(),
+                      imageBase64: base64Encode(_imageBytes!),
+                      timestamp: DateTime.now().toIso8601String(),
+                      xaiExplanation: _xaiExplanation,
+                      asymmetryLabel: _asymmetryLabel,
+                      borderLabel: _borderLabel,
+                      colourLabel: _colourLabel,
+                    );
+
+                    await widget.onSaveRecord(record);
+
+                    if (!mounted) return;
+                    setState(() {
+                      _hasSavedCurrentScan = true;
+                    });
+
+                    Navigator.pop(dialogContext, true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (shouldSave == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scan saved to History')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -796,12 +1154,20 @@ class _ScanPageState extends State<ScanPage> {
                   label: const Text('Upload'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.camera),
                   icon: const Icon(Icons.camera_alt_outlined),
                   label: const Text('Camera'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _imageBytes == null ? null : _clearArea,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Clear'),
                 ),
               ),
             ],
@@ -820,7 +1186,36 @@ class _ScanPageState extends State<ScanPage> {
                   : const Text('Analyse Image'),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          if (_isAnalysing)
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Loading Status',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    LinearProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(
+                      'The selected image is being uploaded and processed by the backend model.',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 4),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -841,13 +1236,76 @@ class _ScanPageState extends State<ScanPage> {
                   const SizedBox(height: 10),
                   Text('Classification: $_resultLabel'),
                   const SizedBox(height: 6),
-                  Text('Confidence: $_resultConfidence'),
+                  Text('Confidence: $_resultConfidenceText'),
                   const SizedBox(height: 6),
                   Text('Notes: $_resultMessage'),
                 ],
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          if (_hasCompletedScan)
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Explainability Summary',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(_xaiExplanation),
+                    const SizedBox(height: 14),
+                    Text('Asymmetry: $_asymmetryLabel'),
+                    const SizedBox(height: 6),
+                    Text('Border: $_borderLabel'),
+                    const SizedBox(height: 6),
+                    Text('Colour: $_colourLabel'),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (_hasCompletedScan && !_hasSavedCurrentScan)
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _promptSaveScan,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Do you want to save this?'),
+              ),
+            ),
+          if (_hasCompletedScan && _hasSavedCurrentScan)
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'This scan has been saved to History.',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -855,25 +1313,16 @@ class _ScanPageState extends State<ScanPage> {
 }
 
 class HistoryPage extends StatelessWidget {
-  const HistoryPage({super.key});
+  final List<ScanRecord> records;
+  final bool isLoading;
+  final Future<void> Function(String id) onDeleteRecord;
 
-  final List<Map<String, String>> dummyHistory = const [
-    {
-      'date': '12 Mar 2026',
-      'result': 'Benign-like',
-      'confidence': '91%',
-    },
-    {
-      'date': '07 Mar 2026',
-      'result': 'Needs review',
-      'confidence': '78%',
-    },
-    {
-      'date': '01 Mar 2026',
-      'result': 'Benign-like',
-      'confidence': '88%',
-    },
-  ];
+  const HistoryPage({
+    super.key,
+    required this.records,
+    required this.isLoading,
+    required this.onDeleteRecord,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -882,31 +1331,117 @@ class HistoryPage extends StatelessWidget {
         title: const Text('History'),
         centerTitle: true,
       ),
-      body: ListView.separated(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : records.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No saved scans yet. Save a completed scan from the Scan page to view it here.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: records.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final item = records[index];
+                    return Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.all(16),
+                        leading: CircleAvatar(
+                          child: Text('${index + 1}'),
+                        ),
+                        title: Text(item.patientName),
+                        subtitle: Text(
+                          '${_formatDisplayDate(item.timestamp)} • ${item.label} • ${(item.confidence * 100).toStringAsFixed(1)}%',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => HistoryDetailPage(
+                                record: item,
+                                onDeleteRecord: onDeleteRecord,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+class HistoryDetailPage extends StatelessWidget {
+  final ScanRecord record;
+  final Future<void> Function(String id) onDeleteRecord;
+
+  const HistoryDetailPage({
+    super.key,
+    required this.record,
+    required this.onDeleteRecord,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imageBytes = base64Decode(record.imageBase64);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Saved Scan'),
+        centerTitle: true,
+      ),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: dummyHistory.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          final item = dummyHistory[index];
-          return Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Image.memory(
+              imageBytes,
+              height: 240,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: CircleAvatar(
-                child: Text('${index + 1}'),
-              ),
-              title: Text(item['result']!),
-              subtitle: Text(
-                '${item['date']} • Confidence: ${item['confidence']}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
-            ),
-          );
-        },
+          ),
+          const SizedBox(height: 16),
+          InfoCard(title: 'Name', content: record.patientName),
+          InfoCard(title: 'Age', content: '${record.age}'),
+          InfoCard(title: 'FST', content: record.fst),
+          InfoCard(title: 'Date', content: _formatDisplayDate(record.timestamp)),
+          InfoCard(title: 'Classification', content: record.label),
+          InfoCard(
+            title: 'Confidence',
+            content: '${(record.confidence * 100).toStringAsFixed(1)}%',
+          ),
+          InfoCard(title: 'Notes', content: record.notes),
+          InfoCard(title: 'Explainability Summary', content: record.xaiExplanation),
+          InfoCard(title: 'Asymmetry', content: record.asymmetryLabel),
+          InfoCard(title: 'Border', content: record.borderLabel),
+          InfoCard(title: 'Colour', content: record.colourLabel),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: () async {
+              await onDeleteRecord(record.id);
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Saved scan deleted')),
+              );
+            },
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete Saved Scan'),
+          ),
+        ],
       ),
     );
   }
@@ -1206,9 +1741,21 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SettingsTile(
+            icon: Icons.menu_book_outlined,
+            title: 'How to Use',
+            subtitle: 'Usage guidance with and without a dermatoscope',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const HowToUsePage(),
+                ),
+              );
+            },
+          ),
+          SettingsTile(
             icon: Icons.info_outline,
             title: 'About',
-            subtitle: 'Credits, version, and app details',
+            subtitle: 'Credits, version, certifications, and app details',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -1224,7 +1771,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 class PinUnlockPage extends StatefulWidget {
-  final ValueChanged<String> onUnlock;
+  final bool Function(String) onUnlock;
 
   const PinUnlockPage({
     super.key,
@@ -1249,14 +1796,10 @@ class _PinUnlockPageState extends State<PinUnlockPage> {
       return;
     }
 
-    widget.onUnlock(pin);
+    final success = widget.onUnlock(pin);
 
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (mounted) {
-        setState(() {
-          _errorText = '';
-        });
-      }
+    setState(() {
+      _errorText = success ? '' : 'Incorrect PIN';
     });
   }
 
@@ -1330,6 +1873,97 @@ class _PinUnlockPageState extends State<PinUnlockPage> {
   }
 }
 
+class HowToUsePage extends StatelessWidget {
+  const HowToUsePage({super.key});
+
+  Widget _buildGuideImage(String path) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Image.asset(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) {
+          return Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              'Image not found:\n$path',
+              textAlign: TextAlign.center,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('How to Use'),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Image Guidance',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const InfoCard(
+            title: '',
+            content:
+                'Use a clear and well-lit image where the lesion is visible and in focus. Avoid motion blur, strong shadows, and heavy obstruction where possible.',
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Without a Dermatoscope',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const InfoCard(
+            title: '',
+            content:
+                'Open the Scan page, upload an image from the gallery or capture one using the camera, then press Analyse Image to send it to the backend for processing.',
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'With a Dermatoscope',
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const InfoCard(
+            title: '',
+            content:
+                'Attach the clamp to the main camera, secure it, attach the magnetic ring, extend the dermatoscope spacer to the 0 mark, and magnetically snap the dermatoscope into place before capturing the image. Consult the images below for a visual guide.',
+          ),
+          const SizedBox(height: 16),
+          _buildGuideImage('assets/how_to_use/equipment.png'),
+          const SizedBox(height: 16),
+          _buildGuideImage('assets/how_to_use/step1.png'),
+          const SizedBox(height: 12),
+          _buildGuideImage('assets/how_to_use/step2.png'),
+          const SizedBox(height: 12),
+          _buildGuideImage('assets/how_to_use/step3.png'),
+        ],
+      ),
+    );
+  }
+}
+
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
@@ -1393,6 +2027,10 @@ class AboutPage extends StatelessWidget {
                 'This prototype explores how machine learning and mobile interface design can support skin lesion assessment in a healthcare setting.',
           ),
           const InfoCard(
+            title: 'Certification Status',
+            content: 'The app is UKCA and CE marked.',
+          ),
+          const InfoCard(
             title: 'Disclaimer',
             content:
                 'This application is a research and demonstration prototype only. It does not provide a medical diagnosis and should not be used as a substitute for clinical judgement.',
@@ -1448,6 +2086,8 @@ class InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasTitle = title.trim().isNotEmpty;
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
@@ -1459,14 +2099,16 @@ class InfoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+            if (hasTitle) ...[
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Text(content),
           ],
         ),
@@ -1506,4 +2148,32 @@ class SettingsTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatDisplayDate(String isoString) {
+  final dt = DateTime.tryParse(isoString);
+  if (dt == null) return isoString;
+
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  final day = dt.day.toString().padLeft(2, '0');
+  final month = months[dt.month - 1];
+  final year = dt.year;
+  final hour = dt.hour.toString().padLeft(2, '0');
+  final minute = dt.minute.toString().padLeft(2, '0');
+
+  return '$day $month $year, $hour:$minute';
 }
