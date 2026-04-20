@@ -615,7 +615,8 @@ class _HomePageState extends State<HomePage>
                           height: 260,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest.withOpacity(0.35),
+                            color:
+                                scheme.surfaceContainerHighest.withOpacity(0.35),
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: ListView.separated(
@@ -1295,13 +1296,13 @@ class _ScanPageState extends State<ScanPage>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Text(_xaiExplanation),
-                    const SizedBox(height: 14),
                     Text('Asymmetry: $_asymmetryLabel'),
                     const SizedBox(height: 6),
                     Text('Border: $_borderLabel'),
                     const SizedBox(height: 6),
                     Text('Colour: $_colourLabel'),
+                    const SizedBox(height: 14),
+                    Text(_xaiExplanation),
                   ],
                 ),
               ),
@@ -1456,10 +1457,10 @@ class HistoryDetailPage extends StatelessWidget {
             content: '${(record.confidence * 100).toStringAsFixed(1)}%',
           ),
           InfoCard(title: 'Notes', content: record.notes),
-          InfoCard(title: 'Explainability Summary', content: record.xaiExplanation),
           InfoCard(title: 'Asymmetry', content: record.asymmetryLabel),
           InfoCard(title: 'Border', content: record.borderLabel),
           InfoCard(title: 'Colour', content: record.colourLabel),
+          InfoCard(title: 'Explainability Summary', content: record.xaiExplanation),
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: () async {

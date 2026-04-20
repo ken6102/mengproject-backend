@@ -57,7 +57,7 @@ def rewrite_abc_explanation(
     abc_summary = _safe_feature_summary(abc_features)
 
     prompt = f"""
-You are rewriting a grounded explainability summary for a GP-facing skin lesion screening prototype.
+You are rewriting a grounded explainability summary for a mobile app for a GP-facing skin lesion screening prototype.
 
 Your task:
 Turn the supplied image-analysis findings into a more detailed, polished explanation suitable for a clinician-facing prototype result screen.
@@ -71,8 +71,11 @@ Important rules:
 - Keep the tone professional, concise, and medically literate.
 - Avoid excessive repetition of the same ABC terms.
 - Make the output more detailed than the baseline.
-- Write 5 to 8 sentences total.
-- Return plain text only.
+- Return plain text only. No bullet points, no bolding, no italics, no underlining, no emojis, no markdown formatting (because it is not supported in the app).
+- Keep the explanation concise and readable. Target approximately 90-120 words, and do not exceed 150 words unless necessary to preserve essential meaning.
+- Separate the explainability summary into paragraphs where appropriate, to improve readability. For example, for each of the ABC criteria.
+- Format the response into 2 to 4 short paragraphs.
+- Do not let any paragraph exceed 3 sentences.
 
 Preferred structure:
 1. Start with a brief overall assessment linked to the model output and confidence.
