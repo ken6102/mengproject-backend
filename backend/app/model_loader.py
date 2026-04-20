@@ -2,7 +2,7 @@ from pathlib import Path
 import tensorflow as tf
 from tensorflow.keras.layers import BatchNormalization, InputLayer, Dense, Conv2D
 
-MODEL_PATH = Path("models/cnn_curated_clean.h5")
+MODEL_PATH = Path("models/cnn_uncurated_clean.h5")
 _model = None
 
 
