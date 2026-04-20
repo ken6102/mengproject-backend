@@ -73,20 +73,24 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
             abc_result = analyse_abc_features(image_bgr)
 
         baseline_explanation = build_baseline_abc_explanation(abc_result)
+
+        abc_features_payload = {
+            "asymmetry": abc_result.get("asymmetry"),
+            "border": abc_result.get("border"),
+            "colour": abc_result.get("colour"),
+        }
+
         rewritten_explanation = rewrite_abc_explanation(
             baseline_text=baseline_explanation,
             keyword_bank=abc_result.get("keyword_bank", {}),
+            abc_features=abc_features_payload,
             label=result.get("label"),
             confidence=result.get("confidence"),
         )
 
         result["filename"] = unique_name
 
-        result["abc_features"] = {
-            "asymmetry": abc_result.get("asymmetry"),
-            "border": abc_result.get("border"),
-            "colour": abc_result.get("colour"),
-        }
+        result["abc_features"] = abc_features_payload
 
         result["keyword_bank"] = abc_result.get(
             "keyword_bank",
