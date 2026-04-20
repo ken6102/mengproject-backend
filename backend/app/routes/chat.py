@@ -46,6 +46,7 @@ Useful app context:
 - The app sends lesion images to a Python backend for binary classification (benign/malignant).
 - The app output displays confidence and an explainability output aligned with the ABC criteria.
 - The current ABC explainability output is based on asymmetry, border, and colour variation.
+- The explainability output also includes a GradCAM heatmap of the lesion image, showing areas that most influenced the model's prediction.
 - When a scan is completed, it can be saved in History with patient details such as name, age, Fitzpatrick skin type, and notes.
 - Saved scans in history can be accessed at any time. They can be deleted, but not edited.
 - The app includes PIN protection and light/dark theme settings.

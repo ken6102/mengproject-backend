@@ -43,12 +43,6 @@ def _resize_for_analysis(image_bgr: np.ndarray, target_width: int = 384) -> np.n
 
 
 def segment_lesion(image_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-    """
-    Segments the lesion from the provided image.
-    IMPORTANT:
-    - Expects image_bgr already resized/prepared for analysis.
-    - Returns a mask with the SAME height/width as image_bgr.
-    """
     blurred = cv2.GaussianBlur(image_bgr, (5, 5), 0)
     lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
     l_channel, _, _ = cv2.split(lab)
@@ -202,10 +196,6 @@ def compute_border_irregularity(contour: np.ndarray) -> FeatureResult:
 
 
 def compute_colour_variation(image_bgr: np.ndarray, mask: np.ndarray) -> FeatureResult:
-    """
-    IMPORTANT:
-    - image_bgr and mask MUST have matching height/width
-    """
     if image_bgr.shape[:2] != mask.shape[:2]:
         raise ValueError(
             f"Image/mask shape mismatch in colour analysis: "
@@ -312,10 +302,6 @@ def build_keyword_bank(
 
 
 def analyse_abc_features(image_bgr: np.ndarray) -> dict[str, Any]:
-    """
-    Full ABC feature pipeline.
-    Uses one consistently sized image throughout to avoid boolean index mismatches.
-    """
     analysis_image = _resize_for_analysis(image_bgr)
 
     mask, contour = segment_lesion(analysis_image)
@@ -368,9 +354,6 @@ def analyse_abc_features(image_bgr: np.ndarray) -> dict[str, Any]:
 
 
 def build_baseline_abc_explanation(abc_result: dict[str, Any]) -> str:
-    """
-    Generates a simple grounded explanation from the extracted ABC features.
-    """
     if not abc_result.get("success", False):
         return (
             "The lesion image could not be reliably analysed for asymmetry, "

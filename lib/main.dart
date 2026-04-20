@@ -759,6 +759,8 @@ class _ScanPageState extends State<ScanPage>
 
   File? _selectedImage;
   Uint8List? _imageBytes;
+  String? _selectedFileName;
+
   String _status = 'No image selected';
   bool _isAnalysing = false;
 
@@ -796,6 +798,7 @@ class _ScanPageState extends State<ScanPage>
       setState(() {
         _selectedImage = File(pickedFile.path);
         _imageBytes = bytes;
+        _selectedFileName = pickedFile.name;
         _status = source == ImageSource.camera
             ? 'Photo captured successfully'
             : 'Image selected successfully';
@@ -826,6 +829,7 @@ class _ScanPageState extends State<ScanPage>
     setState(() {
       _selectedImage = null;
       _imageBytes = null;
+      _selectedFileName = null;
       _status = 'No image selected';
       _resultLabel = 'Awaiting analysis';
       _resultConfidenceValue = null;
@@ -842,7 +846,7 @@ class _ScanPageState extends State<ScanPage>
   }
 
   Future<void> _analyseImage() async {
-    if (_selectedImage == null) {
+    if (_imageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select or capture an image first'),
@@ -871,9 +875,10 @@ class _ScanPageState extends State<ScanPage>
       final uri = Uri.parse('$kBackendBaseUrl/predict/');
       final request = http.MultipartRequest('POST', uri)
         ..files.add(
-          await http.MultipartFile.fromPath(
+          http.MultipartFile.fromBytes(
             'file',
-            _selectedImage!.path,
+            _imageBytes!,
+            filename: _selectedFileName ?? 'upload.jpg',
           ),
         );
 

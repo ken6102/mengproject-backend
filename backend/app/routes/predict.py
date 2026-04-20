@@ -117,7 +117,6 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
             "rewritten": rewritten_explanation,
         }
 
-        # Grad-CAM should be supplementary and not break the main result if it fails
         try:
             gradcam_result = generate_gradcam_overlay_base64(save_path)
             result["gradcam_success"] = gradcam_result.get("success", False)
