@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.routes.predict import router as predict_router
+from app.routes.chat import router as chat_router
 
 app = FastAPI(
     title="MEng Project Backend",
@@ -7,12 +8,16 @@ app = FastAPI(
     description="Backend API for skin lesion image analysis."
 )
 
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {"message": "MEng Project backend is running."}
+
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
+
 app.include_router(predict_router)
+app.include_router(chat_router)

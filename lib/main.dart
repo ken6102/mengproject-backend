@@ -379,77 +379,44 @@ class _HomePageState extends State<HomePage>
   final List<ChatMessage> _messages = [
     ChatMessage(
       text:
-          'Hello, I’m the App Assistant. I can help with questions about using the app, the Scan page, History, Settings, and current prototype features.',
+          'Hello, I’m the App Assistant. I can help with questions about using the app, the Scan page, History, Settings, explainability, and current prototype features.',
       isUser: false,
     ),
   ];
 
+  bool _isSending = false;
+
   @override
   bool get wantKeepAlive => true;
 
-  String _generateBotReply(String userMessage) {
-    final message = userMessage.toLowerCase().trim();
+  Future<String> _sendMessageToBackend(String userMessage) async {
+    final uri = Uri.parse('$kBackendBaseUrl/chat/');
 
-    if (message.contains('scan') ||
-        message.contains('analyse') ||
-        message.contains('analyze') ||
-        message.contains('image') ||
-        message.contains('photo') ||
-        message.contains('camera') ||
-        message.contains('upload')) {
-      return 'To use the Scan page, go to the Scan tab, upload an image from the gallery or capture one using the camera, then press Analyse Image. When a result is returned, you can save it to History with patient details.';
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'message': userMessage,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['reply'] ?? 'No reply returned.').toString();
     }
 
-    if (message.contains('history') ||
-        message.contains('previous') ||
-        message.contains('recent result') ||
-        message.contains('past result')) {
-      return 'The History section stores saved scans with patient details, image preview, confidence, result data, and explainability output.';
-    }
+    String fallback = 'Sorry, I could not process that request.';
+    try {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final detail = data['detail'];
+      if (detail != null) {
+        fallback = detail.toString();
+      }
+    } catch (_) {}
 
-    if (message.contains('about') ||
-        message.contains('credits') ||
-        message.contains('version')) {
-      return 'The About page contains the app version, intended user group, prototype purpose, disclaimer, certifications, and project credits.';
-    }
-
-    if (message.contains('diagnosis') ||
-        message.contains('diagnostic') ||
-        message.contains('medical advice') ||
-        message.contains('doctor') ||
-        message.contains('cancer')) {
-      return 'This prototype is not a medical diagnosis tool. It is intended as a clinical decision-support demonstration and should not replace GP judgement or formal clinical assessment.';
-    }
-
-    if (message.contains('explainability') ||
-        message.contains('xai') ||
-        message.contains('heatmap') ||
-        message.contains('feature')) {
-      return 'The explainability section summarises asymmetry, border, and colour variation, then provides an image-based explanation generated from those extracted features.';
-    }
-
-    if (message.contains('settings') ||
-        message.contains('theme') ||
-        message.contains('pin') ||
-        message.contains('password') ||
-        message.contains('lock')) {
-      return 'The Settings page currently supports theme selection, PIN-based access, a How to Use guide, and an About section.';
-    }
-
-    if (message.contains('chatbot') ||
-        message.contains('assistant') ||
-        message.contains('help')) {
-      return 'I am currently a local prototype assistant built to answer questions about how the app works. Later, this could be replaced with a backend-connected AI assistant.';
-    }
-
-    if (message.contains('backend') ||
-        message.contains('python') ||
-        message.contains('server') ||
-        message.contains('api')) {
-      return 'The app sends an image to a hosted Python backend, receives the model output and explainability data, and displays the result inside the app.';
-    }
-
-    return 'I can currently help with questions about the Scan page, History, Settings, About, explainability output, and how this prototype is intended to be used.';
+    throw Exception(fallback);
   }
 
   void _scrollToBottom() {
@@ -464,21 +431,44 @@ class _HomePageState extends State<HomePage>
     });
   }
 
-  void _sendMessage() {
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSending) return;
 
     setState(() {
       _messages.add(ChatMessage(text: text, isUser: true));
-      _messages.add(
-        ChatMessage(
-          text: _generateBotReply(text),
-          isUser: false,
-        ),
-      );
+      _isSending = true;
     });
 
     _messageController.clear();
+    _scrollToBottom();
+
+    try {
+      final reply = await _sendMessageToBackend(text);
+
+      if (!mounted) return;
+      setState(() {
+        _messages.add(ChatMessage(text: reply, isUser: false));
+        _isSending = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            text:
+                'Sorry, the assistant is currently unavailable. Please try again in a moment.',
+            isUser: false,
+          ),
+        );
+        _isSending = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Chat error: $e')),
+      );
+    }
+
     _scrollToBottom();
   }
 
@@ -630,10 +620,43 @@ class _HomePageState extends State<HomePage>
                           ),
                           child: ListView.separated(
                             controller: _scrollController,
-                            itemCount: _messages.length,
+                            itemCount: _messages.length + (_isSending ? 1 : 0),
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 10),
                             itemBuilder: (context, index) {
+                              if (_isSending && index == _messages.length) {
+                                return Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Container(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 280,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surface,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                          ),
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text('Thinking...'),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
                               final message = _messages[index];
                               return Align(
                                 alignment: message.isUser
@@ -674,6 +697,7 @@ class _HomePageState extends State<HomePage>
                                 controller: _messageController,
                                 textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => _sendMessage(),
+                                enabled: !_isSending,
                                 decoration: const InputDecoration(
                                   hintText: 'Ask about the app...',
                                   border: OutlineInputBorder(),
@@ -684,8 +708,16 @@ class _HomePageState extends State<HomePage>
                             SizedBox(
                               height: 54,
                               child: FilledButton(
-                                onPressed: _sendMessage,
-                                child: const Icon(Icons.send),
+                                onPressed: _isSending ? null : _sendMessage,
+                                child: _isSending
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send),
                               ),
                             ),
                           ],
