@@ -12,6 +12,7 @@ from app.utils.xai_features import (
     build_baseline_abc_explanation,
 )
 from app.utils.xai_text import rewrite_abc_explanation
+from app.utils.gradcam import generate_gradcam_overlay_base64
 
 router = APIRouter(prefix="/predict", tags=["predict"])
 
@@ -63,10 +64,8 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
         ) from exc
 
     try:
-        # Binary model inference
         result = run_binary_inference(save_path)
 
-        # Re-open image after verify() and run ABC/XAI checks
         with Image.open(save_path) as pil_image:
             pil_image = pil_image.convert("RGB")
             image_bgr = pil_to_bgr(pil_image)
@@ -89,7 +88,6 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
         )
 
         result["filename"] = unique_name
-
         result["abc_features"] = abc_features_payload
 
         result["keyword_bank"] = abc_result.get(
@@ -118,6 +116,22 @@ async def predict_image(file: UploadFile = File(...)) -> dict:
             "baseline": baseline_explanation,
             "rewritten": rewritten_explanation,
         }
+
+        # Grad-CAM should be supplementary and not break the main result if it fails
+        try:
+            gradcam_result = generate_gradcam_overlay_base64(save_path)
+            result["gradcam_success"] = gradcam_result.get("success", False)
+            result["gradcam_overlay_base64"] = gradcam_result.get("overlay_base64")
+            result["gradcam_label"] = "Areas of Concern (Grad-CAM)"
+            result["gradcam_message"] = (
+                "Highlighted regions indicate image areas that contributed more strongly to the model output."
+            )
+            result["gradcam_conv_layer"] = gradcam_result.get("conv_layer")
+        except Exception as gradcam_exc:
+            result["gradcam_success"] = False
+            result["gradcam_overlay_base64"] = None
+            result["gradcam_label"] = "Areas of Concern (Grad-CAM)"
+            result["gradcam_message"] = f"Grad-CAM could not be generated: {gradcam_exc}"
 
         return result
 

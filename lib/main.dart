@@ -162,6 +162,7 @@ class ScanRecord {
   final String asymmetryLabel;
   final String borderLabel;
   final String colourLabel;
+  final String gradcamBase64;
 
   const ScanRecord({
     required this.id,
@@ -177,6 +178,7 @@ class ScanRecord {
     required this.asymmetryLabel,
     required this.borderLabel,
     required this.colourLabel,
+    required this.gradcamBase64,
   });
 
   Map<String, dynamic> toJson() {
@@ -194,6 +196,7 @@ class ScanRecord {
       'asymmetryLabel': asymmetryLabel,
       'borderLabel': borderLabel,
       'colourLabel': colourLabel,
+      'gradcamBase64': gradcamBase64,
     };
   }
 
@@ -212,6 +215,7 @@ class ScanRecord {
       asymmetryLabel: (json['asymmetryLabel'] ?? 'N/A').toString(),
       borderLabel: (json['borderLabel'] ?? 'N/A').toString(),
       colourLabel: (json['colourLabel'] ?? 'N/A').toString(),
+      gradcamBase64: (json['gradcamBase64'] ?? '').toString(),
     );
   }
 }
@@ -767,6 +771,7 @@ class _ScanPageState extends State<ScanPage>
   String _asymmetryLabel = 'N/A';
   String _borderLabel = 'N/A';
   String _colourLabel = 'N/A';
+  String _gradcamBase64 = '';
 
   bool _hasCompletedScan = false;
   bool _hasSavedCurrentScan = false;
@@ -802,6 +807,7 @@ class _ScanPageState extends State<ScanPage>
         _asymmetryLabel = 'N/A';
         _borderLabel = 'N/A';
         _colourLabel = 'N/A';
+        _gradcamBase64 = '';
         _hasCompletedScan = false;
         _hasSavedCurrentScan = false;
       });
@@ -829,6 +835,7 @@ class _ScanPageState extends State<ScanPage>
       _asymmetryLabel = 'N/A';
       _borderLabel = 'N/A';
       _colourLabel = 'N/A';
+      _gradcamBase64 = '';
       _hasCompletedScan = false;
       _hasSavedCurrentScan = false;
     });
@@ -855,6 +862,7 @@ class _ScanPageState extends State<ScanPage>
       _asymmetryLabel = 'Analysing...';
       _borderLabel = 'Analysing...';
       _colourLabel = 'Analysing...';
+      _gradcamBase64 = '';
       _hasCompletedScan = false;
       _hasSavedCurrentScan = false;
     });
@@ -905,6 +913,7 @@ class _ScanPageState extends State<ScanPage>
               (asymmetry?['label'] ?? 'Not available').toString();
           _borderLabel = (border?['label'] ?? 'Not available').toString();
           _colourLabel = (colour?['label'] ?? 'Not available').toString();
+          _gradcamBase64 = (data['gradcam_overlay_base64'] ?? '').toString();
 
           _hasCompletedScan = true;
           _hasSavedCurrentScan = false;
@@ -927,6 +936,7 @@ class _ScanPageState extends State<ScanPage>
           _asymmetryLabel = 'N/A';
           _borderLabel = 'N/A';
           _colourLabel = 'N/A';
+          _gradcamBase64 = '';
           _hasCompletedScan = false;
           _hasSavedCurrentScan = false;
         });
@@ -953,6 +963,7 @@ class _ScanPageState extends State<ScanPage>
         _asymmetryLabel = 'N/A';
         _borderLabel = 'N/A';
         _colourLabel = 'N/A';
+        _gradcamBase64 = '';
         _hasCompletedScan = false;
         _hasSavedCurrentScan = false;
       });
@@ -1076,6 +1087,7 @@ class _ScanPageState extends State<ScanPage>
                       asymmetryLabel: _asymmetryLabel,
                       borderLabel: _borderLabel,
                       colourLabel: _colourLabel,
+                      gradcamBase64: _gradcamBase64,
                     );
 
                     await widget.onSaveRecord(record);
@@ -1303,6 +1315,29 @@ class _ScanPageState extends State<ScanPage>
                     Text('Colour: $_colourLabel'),
                     const SizedBox(height: 14),
                     Text(_xaiExplanation),
+                    if (_gradcamBase64.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Areas of Concern (Grad-CAM)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Highlighted regions indicate image areas that contributed more strongly to the model output.',
+                      ),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.memory(
+                          base64Decode(_gradcamBase64),
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1461,6 +1496,42 @@ class HistoryDetailPage extends StatelessWidget {
           InfoCard(title: 'Border', content: record.borderLabel),
           InfoCard(title: 'Colour', content: record.colourLabel),
           InfoCard(title: 'Explainability Summary', content: record.xaiExplanation),
+          if (record.gradcamBase64.isNotEmpty)
+            Card(
+              elevation: 0,
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Areas of Concern (Grad-CAM)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Highlighted regions indicate image areas that contributed more strongly to the model output.',
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.memory(
+                        base64Decode(record.gradcamBase64),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: () async {
