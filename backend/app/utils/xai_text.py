@@ -76,6 +76,7 @@ Important rules:
 - Separate the explainability summary into paragraphs where appropriate, to improve readability. For example, for each of the ABC criteria.
 - Format the response into 2 to 4 short paragraphs.
 - Do not let any paragraph exceed 3 sentences.
+- Do not mention the individual scores for asymmetry, border, and colour. However, you should, of course, provide the confidence score for malignancy.
 
 Preferred structure:
 1. Start with a brief overall assessment linked to the model output and confidence.
