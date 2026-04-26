@@ -103,6 +103,6 @@ Baseline explanation:
         )
         rewritten = response.output_text.strip()
         return rewritten if rewritten else baseline_text
-    except Exception:
-        print("Error during XAI text rewriting. Returning baseline explanation.")
+    except Exception as exc:
+        print(f"Error during XAI text rewriting: {exc}")
         return baseline_text
