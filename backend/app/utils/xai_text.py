@@ -98,10 +98,11 @@ Baseline explanation:
 
     try:
         response = client.responses.create(
-            model="gpt-5.4",
+            model="gpt-5.2",
             input=prompt,
         )
         rewritten = response.output_text.strip()
         return rewritten if rewritten else baseline_text
     except Exception:
+        print("Error during XAI text rewriting. Returning baseline explanation.")
         return baseline_text
