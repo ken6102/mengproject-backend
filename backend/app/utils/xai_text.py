@@ -98,7 +98,7 @@ Baseline explanation:
 
     try:
         response = client.responses.create(
-            model="gpt-5.2",
+            model="gpt-4o-mini",
             input=prompt,
         )
         rewritten = response.output_text.strip()

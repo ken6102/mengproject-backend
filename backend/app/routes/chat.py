@@ -65,7 +65,7 @@ async def chat_endpoint(payload: ChatRequest) -> ChatResponse:
 
     try:
         response = client.responses.create(
-            model="gpt-5.4",
+            model="gpt-4o-mini",
             instructions=SYSTEM_PROMPT,
             input=message,
         )
